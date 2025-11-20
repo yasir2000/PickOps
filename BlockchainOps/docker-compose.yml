@@ -1,0 +1,174 @@
+version: '3.8'
+
+services:
+  geth:
+    image: ethereum/client-go:latest
+    container_name: blockchainops-geth
+    ports:
+      - "8545:8545"
+      - "8546:8546"
+      - "30303:30303"
+    volumes:
+      - geth_data:/root/.ethereum
+    command:
+      - --http
+      - --http.addr=0.0.0.0
+      - --http.api=eth,net,web3,personal
+      - --http.corsdomain=*
+      - --ws
+      - --ws.addr=0.0.0.0
+      - --ws.api=eth,net,web3
+      - --syncmode=snap
+    restart: unless-stopped
+    networks:
+      - blockchain-network
+
+  besu:
+    image: hyperledger/besu:latest
+    container_name: blockchainops-besu
+    ports:
+      - "8547:8545"
+      - "8548:8546"
+      - "30304:30303"
+    volumes:
+      - besu_data:/opt/besu/data
+    command:
+      - --rpc-http-enabled
+      - --rpc-http-host=0.0.0.0
+      - --rpc-http-cors-origins=*
+      - --rpc-ws-enabled
+      - --rpc-ws-host=0.0.0.0
+    restart: unless-stopped
+    networks:
+      - blockchain-network
+
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: blockchainops-ipfs
+    ports:
+      - "4001:4001"
+      - "5001:5001"
+      - "8080:8080"
+    volumes:
+      - ipfs_data:/data/ipfs
+      - ipfs_staging:/export
+    restart: unless-stopped
+    networks:
+      - blockchain-network
+
+  ganache:
+    image: trufflesuite/ganache:latest
+    container_name: blockchainops-ganache
+    ports:
+      - "8545:8545"
+    command:
+      - --host=0.0.0.0
+      - --accounts=10
+      - --defaultBalanceEther=100
+    restart: unless-stopped
+    networks:
+      - blockchain-network
+
+  blockscout:
+    image: blockscout/blockscout:latest
+    container_name: blockchainops-blockscout
+    ports:
+      - "4000:4000"
+    environment:
+      - ETHEREUM_JSONRPC_VARIANT=geth
+      - ETHEREUM_JSONRPC_HTTP_URL=http://geth:8545
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/blockscout
+      - SECRET_KEY_BASE=${BLOCKSCOUT_SECRET_KEY}
+    depends_on:
+      - postgres
+      - geth
+    restart: unless-stopped
+    networks:
+      - blockchain-network
+
+  graph-node:
+    image: graphprotocol/graph-node:latest
+    container_name: blockchainops-graph-node
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+      - "8020:8020"
+      - "8030:8030"
+      - "8040:8040"
+    environment:
+      - postgres_host=postgres
+      - postgres_user=graph
+      - postgres_pass=${GRAPH_DB_PASSWORD}
+      - postgres_db=graph
+      - ipfs=ipfs:5001
+      - ethereum=mainnet:http://geth:8545
+    depends_on:
+      - postgres
+      - ipfs
+      - geth
+    restart: unless-stopped
+    networks:
+      - blockchain-network
+
+  hardhat-node:
+    image: node:18
+    container_name: blockchainops-hardhat
+    ports:
+      - "8545:8545"
+    working_dir: /app
+    volumes:
+      - ./hardhat:/app
+    command: npx hardhat node --hostname 0.0.0.0
+    restart: unless-stopped
+    networks:
+      - blockchain-network
+
+  postgres:
+    image: postgres:15
+    container_name: blockchainops-postgres
+    environment:
+      - POSTGRES_USER=blockchain
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - blockchain-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: blockchainops-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+    networks:
+      - blockchain-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: blockchainops-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+    networks:
+      - blockchain-network
+
+volumes:
+  geth_data:
+  besu_data:
+  ipfs_data:
+  ipfs_staging:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  blockchain-network:
+    driver: bridge

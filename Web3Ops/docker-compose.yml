@@ -1,0 +1,156 @@
+version: '3.8'
+
+services:
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: web3ops-ipfs
+    ports:
+      - "4001:4001"
+      - "5001:5001"
+      - "8080:8080"
+    volumes:
+      - ipfs_data:/data/ipfs
+      - ipfs_staging:/export
+    restart: unless-stopped
+    networks:
+      - web3ops-network
+
+  ipfs-cluster:
+    image: ipfs/ipfs-cluster:latest
+    container_name: web3ops-ipfs-cluster
+    ports:
+      - "9094:9094"
+      - "9095:9095"
+      - "9096:9096"
+    environment:
+      - CLUSTER_PEERNAME=cluster0
+      - CLUSTER_SECRET=${CLUSTER_SECRET}
+    volumes:
+      - ipfs_cluster_data:/data/ipfs-cluster
+    depends_on:
+      - ipfs
+    restart: unless-stopped
+    networks:
+      - web3ops-network
+
+  ceramic:
+    image: ceramicnetwork/js-ceramic:latest
+    container_name: web3ops-ceramic
+    ports:
+      - "7007:7007"
+    environment:
+      - CERAMIC_NETWORK=${CERAMIC_NETWORK:-testnet-clay}
+    volumes:
+      - ceramic_data:/root/.ceramic
+    restart: unless-stopped
+    networks:
+      - web3ops-network
+
+  lit-node:
+    image: litprotocol/lit-node:latest
+    container_name: web3ops-lit
+    ports:
+      - "7470:7470"
+    environment:
+      - LIT_CONFIG_PATH=/app/config
+    volumes:
+      - lit_data:/app/data
+      - ./configs/lit:/app/config
+    restart: unless-stopped
+    networks:
+      - web3ops-network
+
+  graph-node:
+    image: graphprotocol/graph-node:latest
+    container_name: web3ops-graph
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+      - "8020:8020"
+      - "8030:8030"
+      - "8040:8040"
+    environment:
+      - postgres_host=postgres
+      - postgres_user=graph
+      - postgres_pass=${GRAPH_DB_PASSWORD}
+      - postgres_db=graph
+      - ipfs=ipfs:5001
+      - ethereum=mainnet:${ETH_RPC_URL}
+    depends_on:
+      - postgres
+      - ipfs
+    restart: unless-stopped
+    networks:
+      - web3ops-network
+
+  arweave:
+    image: textury/arlocal:latest
+    container_name: web3ops-arweave
+    ports:
+      - "1984:1984"
+    restart: unless-stopped
+    networks:
+      - web3ops-network
+
+  safe-transaction-service:
+    image: safeglobal/safe-transaction-service:latest
+    container_name: web3ops-safe
+    ports:
+      - "8000:8000"
+    environment:
+      - ETHEREUM_NODE_URL=${ETH_RPC_URL}
+      - DATABASE_URL=postgresql://safe:${SAFE_DB_PASSWORD}@postgres:5432/safe
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - web3ops-network
+
+  walletconnect-relay:
+    image: walletconnect/relay-server:latest
+    container_name: web3ops-walletconnect
+    ports:
+      - "5555:5555"
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - web3ops-network
+
+  postgres:
+    image: postgres:15
+    container_name: web3ops-postgres
+    environment:
+      - POSTGRES_USER=web3
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - web3ops-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: web3ops-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - web3ops-network
+
+volumes:
+  ipfs_data:
+  ipfs_staging:
+  ipfs_cluster_data:
+  ceramic_data:
+  lit_data:
+  postgres_data:
+  redis_data:
+
+networks:
+  web3ops-network:
+    driver: bridge

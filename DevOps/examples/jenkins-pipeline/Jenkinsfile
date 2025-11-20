@@ -1,0 +1,177 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_REGISTRY = 'localhost:8081'
+        DOCKER_IMAGE = 'myapp'
+        SONAR_HOST = 'http://sonarqube:9000'
+        VAULT_ADDR = 'http://vault:8200'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Cloning repository...'
+                git branch: 'main', url: 'https://github.com/example/myapp.git'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                echo 'Building application...'
+                sh '''
+                    npm install
+                    npm run build
+                '''
+            }
+        }
+
+        stage('Test') {
+            steps {
+                echo 'Running tests...'
+                sh '''
+                    npm run test
+                    npm run test:coverage
+                '''
+            }
+            post {
+                always {
+                    junit 'test-results/**/*.xml'
+                    publishHTML([
+                        reportDir: 'coverage',
+                        reportFiles: 'index.html',
+                        reportName: 'Coverage Report'
+                    ])
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh '''
+                        sonar-scanner \
+                          -Dsonar.projectKey=myapp \
+                          -Dsonar.sources=src \
+                          -Dsonar.host.url=${SONAR_HOST}
+                    '''
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                echo 'Building Docker image...'
+                sh '''
+                    docker build -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER} .
+                    docker tag ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER} \
+                               ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
+                '''
+            }
+        }
+
+        stage('Security Scan') {
+            steps {
+                echo 'Scanning image for vulnerabilities...'
+                sh '''
+                    docker run --rm \
+                        -v /var/run/docker.sock:/var/run/docker.sock \
+                        aquasec/trivy image \
+                        --severity HIGH,CRITICAL \
+                        ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER}
+                '''
+            }
+        }
+
+        stage('Push to Registry') {
+            steps {
+                echo 'Pushing to Harbor registry...'
+                withCredentials([usernamePassword(
+                    credentialsId: 'harbor-credentials',
+                    usernameVariable: 'HARBOR_USER',
+                    passwordVariable: 'HARBOR_PASS'
+                )]) {
+                    sh '''
+                        echo ${HARBOR_PASS} | docker login ${DOCKER_REGISTRY} \
+                            -u ${HARBOR_USER} --password-stdin
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER}
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to Staging') {
+            steps {
+                echo 'Deploying to staging environment...'
+                sh '''
+                    docker run -d \
+                        --name myapp-staging-${BUILD_NUMBER} \
+                        -p 3000:3000 \
+                        ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER}
+                '''
+            }
+        }
+
+        stage('Integration Tests') {
+            steps {
+                echo 'Running integration tests...'
+                sh '''
+                    sleep 10  # Wait for app to start
+                    npm run test:integration
+                '''
+            }
+        }
+
+        stage('Deploy to Production') {
+            when {
+                branch 'main'
+            }
+            steps {
+                input message: 'Deploy to production?', ok: 'Deploy'
+                echo 'Deploying to production...'
+                sh '''
+                    # Stop old container
+                    docker stop myapp-prod || true
+                    docker rm myapp-prod || true
+
+                    # Start new container
+                    docker run -d \
+                        --name myapp-prod \
+                        -p 80:3000 \
+                        --restart unless-stopped \
+                        ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER}
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Cleaning up...'
+            sh 'docker system prune -f'
+        }
+        success {
+            echo 'Pipeline succeeded! ✅'
+            slackSend(
+                color: 'good',
+                message: "Build #${BUILD_NUMBER} succeeded for ${JOB_NAME}"
+            )
+        }
+        failure {
+            echo 'Pipeline failed! ❌'
+            slackSend(
+                color: 'danger',
+                message: "Build #${BUILD_NUMBER} failed for ${JOB_NAME}"
+            )
+        }
+    }
+}

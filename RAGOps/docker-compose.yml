@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: ragops-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+    networks:
+      - ragops-network
+
+  weaviate:
+    image: semitechnologies/weaviate:latest
+    container_name: ragops-weaviate
+    ports:
+      - "8080:8080"
+    environment:
+      - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
+      - PERSISTENCE_DATA_PATH=/var/lib/weaviate
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    restart: unless-stopped
+    networks:
+      - ragops-network
+
+  milvus:
+    image: milvusdb/milvus:latest
+    container_name: ragops-milvus
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    environment:
+      - ETCD_ENDPOINTS=etcd:2379
+      - MINIO_ADDRESS=minio:9000
+    depends_on:
+      - etcd
+      - minio
+    volumes:
+      - milvus_data:/var/lib/milvus
+    restart: unless-stopped
+    networks:
+      - ragops-network
+
+  etcd:
+    image: quay.io/coreos/etcd:latest
+    container_name: ragops-etcd
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+    volumes:
+      - etcd_data:/etcd
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379
+    restart: unless-stopped
+    networks:
+      - ragops-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: ragops-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD}
+    volumes:
+      - minio_data:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    restart: unless-stopped
+    networks:
+      - ragops-network
+
+  unstructured-api:
+    image: quay.io/unstructured-io/unstructured-api:latest
+    container_name: ragops-unstructured
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - ragops-network
+
+  litellm:
+    image: ghcr.io/berriai/litellm:latest
+    container_name: ragops-litellm
+    ports:
+      - "4000:4000"
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_KEY}
+    volumes:
+      - ./configs/litellm_config.yaml:/app/config.yaml
+    command: --config /app/config.yaml
+    restart: unless-stopped
+    networks:
+      - ragops-network
+
+  postgres:
+    image: postgres:15
+    container_name: ragops-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=ragops
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - ragops-network
+
+volumes:
+  qdrant_storage:
+  weaviate_data:
+  milvus_data:
+  etcd_data:
+  minio_data:
+  postgres_data:
+
+networks:
+  ragops-network:
+    driver: bridge

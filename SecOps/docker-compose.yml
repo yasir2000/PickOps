@@ -1,0 +1,170 @@
+version: '3.8'
+
+services:
+  wazuh:
+    image: wazuh/wazuh:latest
+    container_name: secops-wazuh
+    ports:
+      - "1514:1514"
+      - "1515:1515"
+      - "55000:55000"
+    environment:
+      - INDEXER_URL=https://wazuh-indexer:9200
+      - INDEXER_USERNAME=admin
+      - INDEXER_PASSWORD=${WAZUH_PASSWORD}
+    volumes:
+      - wazuh_data:/var/ossec/data
+    restart: unless-stopped
+    networks:
+      - secops-network
+
+  wazuh-indexer:
+    image: wazuh/wazuh-indexer:latest
+    container_name: secops-wazuh-indexer
+    ports:
+      - "9200:9200"
+    environment:
+      - "discovery.type=single-node"
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - wazuh_indexer_data:/var/lib/wazuh-indexer
+    restart: unless-stopped
+    networks:
+      - secops-network
+
+  wazuh-dashboard:
+    image: wazuh/wazuh-dashboard:latest
+    container_name: secops-wazuh-dashboard
+    ports:
+      - "443:5601"
+    environment:
+      - INDEXER_USERNAME=admin
+      - INDEXER_PASSWORD=${WAZUH_PASSWORD}
+      - WAZUH_API_URL=https://wazuh:55000
+    depends_on:
+      - wazuh-indexer
+    restart: unless-stopped
+    networks:
+      - secops-network
+
+  thehive:
+    image: strangebee/thehive:latest
+    container_name: secops-thehive
+    ports:
+      - "9000:9000"
+    environment:
+      - TH_SECRET=${THEHIVE_SECRET}
+    volumes:
+      - thehive_data:/opt/thp/thehive/data
+      - thehive_index:/opt/thp/thehive/index
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+    networks:
+      - secops-network
+
+  cortex:
+    image: thehiveproject/cortex:latest
+    container_name: secops-cortex
+    ports:
+      - "9001:9001"
+    environment:
+      - job_directory=/tmp/cortex-jobs
+    volumes:
+      - cortex_data:/var/cortex
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+    networks:
+      - secops-network
+
+  misp:
+    image: coolacid/misp-docker:latest
+    container_name: secops-misp
+    ports:
+      - "8080:80"
+      - "8443:443"
+    environment:
+      - MYSQL_HOST=misp-db
+      - MYSQL_DATABASE=misp
+      - MYSQL_USER=misp
+      - MYSQL_PASSWORD=${MISP_DB_PASSWORD}
+    volumes:
+      - misp_data:/var/www/MISP
+    depends_on:
+      - misp-db
+    restart: unless-stopped
+    networks:
+      - secops-network
+
+  misp-db:
+    image: mysql:8
+    container_name: secops-misp-db
+    environment:
+      - MYSQL_DATABASE=misp
+      - MYSQL_USER=misp
+      - MYSQL_PASSWORD=${MISP_DB_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=${MISP_DB_ROOT_PASSWORD}
+    volumes:
+      - misp_db_data:/var/lib/mysql
+    restart: unless-stopped
+    networks:
+      - secops-network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: secops-elasticsearch
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    restart: unless-stopped
+    networks:
+      - secops-network
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: secops-kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+    networks:
+      - secops-network
+
+  openvas:
+    image: greenbone/openvas-scanner:latest
+    container_name: secops-openvas
+    ports:
+      - "9392:9392"
+    environment:
+      - USERNAME=admin
+      - PASSWORD=${OPENVAS_PASSWORD}
+    volumes:
+      - openvas_data:/var/lib/openvas
+    restart: unless-stopped
+    networks:
+      - secops-network
+
+volumes:
+  wazuh_data:
+  wazuh_indexer_data:
+  thehive_data:
+  thehive_index:
+  cortex_data:
+  misp_data:
+  misp_db_data:
+  elasticsearch_data:
+  openvas_data:
+
+networks:
+  secops-network:
+    driver: bridge

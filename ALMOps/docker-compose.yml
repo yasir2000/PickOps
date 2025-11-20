@@ -1,0 +1,239 @@
+version: '3.8'
+
+services:
+  # Jira - Issue tracking and project management
+  jira:
+    image: atlassian/jira-software:9.12
+    container_name: almops-jira
+    ports:
+      - "8080:8080"
+    environment:
+      - ATL_PROXY_NAME=${JIRA_PROXY_NAME:-localhost}
+      - ATL_PROXY_PORT=${JIRA_PROXY_PORT:-8080}
+      - ATL_TOMCAT_PORT=8080
+      - JVM_MINIMUM_MEMORY=${JIRA_MIN_MEMORY:-2g}
+      - JVM_MAXIMUM_MEMORY=${JIRA_MAX_MEMORY:-4g}
+    volumes:
+      - jira_data:/var/atlassian/application-data/jira
+    networks:
+      - almops
+
+  # Confluence - Documentation and knowledge management
+  confluence:
+    image: atlassian/confluence:8.5
+    container_name: almops-confluence
+    ports:
+      - "8090:8090"
+      - "8091:8091"
+    environment:
+      - ATL_PROXY_NAME=${CONFLUENCE_PROXY_NAME:-localhost}
+      - ATL_PROXY_PORT=${CONFLUENCE_PROXY_PORT:-8090}
+      - ATL_TOMCAT_PORT=8090
+      - JVM_MINIMUM_MEMORY=${CONFLUENCE_MIN_MEMORY:-2g}
+      - JVM_MAXIMUM_MEMORY=${CONFLUENCE_MAX_MEMORY:-4g}
+    volumes:
+      - confluence_data:/var/atlassian/application-data/confluence
+    networks:
+      - almops
+
+  # GitLab - Source code management and CI/CD
+  gitlab:
+    image: gitlab/gitlab-ce:16.6.0-ce.0
+    container_name: almops-gitlab
+    hostname: gitlab.local
+    ports:
+      - "8929:80"
+      - "8443:443"
+      - "8022:22"
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://gitlab.local:8929'
+        gitlab_rails['gitlab_shell_ssh_port'] = 8022
+        gitlab_rails['initial_root_password'] = '${GITLAB_ROOT_PASSWORD:-changeme123}'
+        prometheus['enable'] = false
+        grafana['enable'] = false
+    volumes:
+      - gitlab_config:/etc/gitlab
+      - gitlab_logs:/var/log/gitlab
+      - gitlab_data:/var/opt/gitlab
+    networks:
+      - almops
+    shm_size: '256m'
+
+  # Nexus Repository - Artifact repository manager
+  nexus:
+    image: sonatype/nexus3:3.63.0
+    container_name: almops-nexus
+    ports:
+      - "8081:8081"
+      - "8082:8082"  # Docker registry
+      - "8083:8083"  # Additional registry
+    environment:
+      - NEXUS_CONTEXT=${NEXUS_CONTEXT:-nexus}
+      - INSTALL4J_ADD_VM_PARAMS=-Xms${NEXUS_MIN_MEMORY:-1g} -Xmx${NEXUS_MAX_MEMORY:-2g}
+    volumes:
+      - nexus_data:/nexus-data
+    networks:
+      - almops
+
+  # Taiga - Agile project management
+  taiga-back:
+    image: taigaio/taiga-back:latest
+    container_name: almops-taiga-back
+    environment:
+      - POSTGRES_DB=taiga
+      - POSTGRES_USER=${TAIGA_DB_USER:-taiga}
+      - POSTGRES_PASSWORD=${TAIGA_DB_PASSWORD:-changeme}
+      - POSTGRES_HOST=taiga-db
+      - TAIGA_SECRET_KEY=${TAIGA_SECRET_KEY:-changeme-secret-key}
+      - TAIGA_SITES_SCHEME=http
+      - TAIGA_SITES_DOMAIN=localhost:9000
+      - EVENTS_PUSH_BACKEND_URL=amqp://taiga:${TAIGA_RABBITMQ_PASSWORD:-changeme}@taiga-rabbitmq:5672/taiga
+    volumes:
+      - taiga_static:/taiga-back/static
+      - taiga_media:/taiga-back/media
+    networks:
+      - almops
+    depends_on:
+      - taiga-db
+      - taiga-rabbitmq
+
+  taiga-front:
+    image: taigaio/taiga-front:latest
+    container_name: almops-taiga-front
+    ports:
+      - "9000:80"
+    environment:
+      - TAIGA_URL=http://localhost:9000
+      - TAIGA_WEBSOCKETS_URL=ws://localhost:9000
+    networks:
+      - almops
+    depends_on:
+      - taiga-back
+
+  taiga-db:
+    image: postgres:15-alpine
+    container_name: almops-taiga-db
+    environment:
+      - POSTGRES_DB=taiga
+      - POSTGRES_USER=${TAIGA_DB_USER:-taiga}
+      - POSTGRES_PASSWORD=${TAIGA_DB_PASSWORD:-changeme}
+    volumes:
+      - taiga_db:/var/lib/postgresql/data
+    networks:
+      - almops
+
+  taiga-rabbitmq:
+    image: rabbitmq:3.12-alpine
+    container_name: almops-taiga-rabbitmq
+    environment:
+      - RABBITMQ_DEFAULT_USER=taiga
+      - RABBITMQ_DEFAULT_PASS=${TAIGA_RABBITMQ_PASSWORD:-changeme}
+      - RABBITMQ_DEFAULT_VHOST=taiga
+    volumes:
+      - taiga_rabbitmq:/var/lib/rabbitmq
+    networks:
+      - almops
+
+  # Jenkins - CI/CD automation
+  jenkins:
+    image: jenkins/jenkins:lts-jdk17
+    container_name: almops-jenkins
+    ports:
+      - "8085:8080"
+      - "50000:50000"
+    environment:
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
+      - JENKINS_OPTS=--prefix=/jenkins
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - almops
+    user: root
+
+  # Redmine - Project management and issue tracking
+  redmine:
+    image: redmine:5.1-alpine
+    container_name: almops-redmine
+    ports:
+      - "3000:3000"
+    environment:
+      - REDMINE_DB_POSTGRES=redmine-db
+      - REDMINE_DB_USERNAME=${REDMINE_DB_USER:-redmine}
+      - REDMINE_DB_PASSWORD=${REDMINE_DB_PASSWORD:-changeme}
+      - REDMINE_DB_DATABASE=redmine
+      - REDMINE_SECRET_KEY_BASE=${REDMINE_SECRET:-changeme-secret-key}
+    volumes:
+      - redmine_files:/usr/src/redmine/files
+      - redmine_plugins:/usr/src/redmine/plugins
+    networks:
+      - almops
+    depends_on:
+      - redmine-db
+
+  redmine-db:
+    image: postgres:15-alpine
+    container_name: almops-redmine-db
+    environment:
+      - POSTGRES_DB=redmine
+      - POSTGRES_USER=${REDMINE_DB_USER:-redmine}
+      - POSTGRES_PASSWORD=${REDMINE_DB_PASSWORD:-changeme}
+    volumes:
+      - redmine_db:/var/lib/postgresql/data
+    networks:
+      - almops
+
+  # Prometheus - Metrics and monitoring
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: almops-prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - almops
+
+  # Grafana - Metrics visualization
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: almops-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - almops
+
+volumes:
+  jira_data:
+  confluence_data:
+  gitlab_config:
+  gitlab_logs:
+  gitlab_data:
+  nexus_data:
+  taiga_static:
+  taiga_media:
+  taiga_db:
+  taiga_rabbitmq:
+  jenkins_home:
+  redmine_files:
+  redmine_plugins:
+  redmine_db:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  almops:
+    driver: bridge

@@ -1,0 +1,178 @@
+version: '3.8'
+
+services:
+  argocd-server:
+    image: quay.io/argoproj/argocd:latest
+    container_name: gitops-argocd
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    environment:
+      - ARGOCD_SERVER_INSECURE=true
+    volumes:
+      - argocd_data:/home/argocd
+    command: argocd-server --insecure
+    restart: unless-stopped
+    networks:
+      - gitops-network
+
+  argocd-repo-server:
+    image: quay.io/argoproj/argocd:latest
+    container_name: gitops-argocd-repo
+    volumes:
+      - argocd_repos:/tmp
+    command: argocd-repo-server
+    restart: unless-stopped
+    networks:
+      - gitops-network
+
+  flux:
+    image: fluxcd/flux:latest
+    container_name: gitops-flux
+    ports:
+      - "8081:3030"
+    environment:
+      - FLUX_URL=http://gitea:3000
+    volumes:
+      - flux_data:/root/.flux
+    restart: unless-stopped
+    networks:
+      - gitops-network
+
+  gitea:
+    image: gitea/gitea:latest
+    container_name: gitops-gitea
+    ports:
+      - "3000:3000"
+      - "2222:22"
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - GITEA__database__DB_TYPE=postgres
+      - GITEA__database__HOST=postgres:5432
+      - GITEA__database__NAME=gitea
+      - GITEA__database__USER=gitea
+      - GITEA__database__PASSWD=${GITEA_DB_PASSWORD}
+    volumes:
+      - gitea_data:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - gitops-network
+
+  tekton-dashboard:
+    image: gcr.io/tekton-releases/github.com/tektoncd/dashboard/cmd/dashboard:latest
+    container_name: gitops-tekton-dashboard
+    ports:
+      - "9097:9097"
+    environment:
+      - PORT=9097
+    restart: unless-stopped
+    networks:
+      - gitops-network
+
+  sealed-secrets-controller:
+    image: quay.io/bitnami/sealed-secrets-controller:latest
+    container_name: gitops-sealed-secrets
+    ports:
+      - "8081:8080"
+    volumes:
+      - sealed_secrets_keys:/tmp/keys
+    restart: unless-stopped
+    networks:
+      - gitops-network
+
+  kustomize-controller:
+    image: fluxcd/kustomize-controller:latest
+    container_name: gitops-kustomize
+    volumes:
+      - ./manifests:/manifests
+      - kustomize_cache:/tmp
+    restart: unless-stopped
+    networks:
+      - gitops-network
+
+  config-sync:
+    build:
+      context: ./config-sync
+      dockerfile: Dockerfile
+    container_name: gitops-config-sync
+    environment:
+      - GIT_REPO_URL=${GIT_REPO_URL}
+      - GIT_BRANCH=${GIT_BRANCH:-main}
+      - SYNC_INTERVAL=${SYNC_INTERVAL:-60}
+    volumes:
+      - ./repos:/repos
+      - config_sync_cache:/cache
+    restart: unless-stopped
+    networks:
+      - gitops-network
+
+  postgres:
+    image: postgres:15
+    container_name: gitops-postgres
+    environment:
+      - POSTGRES_USER=gitops
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_MULTIPLE_DATABASES=gitea,argocd
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - gitops-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: gitops-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - gitops-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: gitops-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+    networks:
+      - gitops-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: gitops-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+    networks:
+      - gitops-network
+
+volumes:
+  argocd_data:
+  argocd_repos:
+  flux_data:
+  gitea_data:
+  sealed_secrets_keys:
+  kustomize_cache:
+  config_sync_cache:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  gitops-network:
+    driver: bridge

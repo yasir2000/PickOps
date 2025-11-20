@@ -1,0 +1,220 @@
+version: '3.8'
+
+services:
+  zabbix-server:
+    image: zabbix/zabbix-server-pgsql:latest
+    container_name: itops-zabbix-server
+    ports:
+      - "10051:10051"
+    environment:
+      - DB_SERVER_HOST=postgres
+      - POSTGRES_USER=zabbix
+      - POSTGRES_PASSWORD=${ZABBIX_DB_PASSWORD}
+      - POSTGRES_DB=zabbix
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - itops-network
+
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-pgsql:latest
+    container_name: itops-zabbix-web
+    ports:
+      - "80:8080"
+    environment:
+      - DB_SERVER_HOST=postgres
+      - POSTGRES_USER=zabbix
+      - POSTGRES_PASSWORD=${ZABBIX_DB_PASSWORD}
+      - POSTGRES_DB=zabbix
+      - ZBX_SERVER_HOST=zabbix-server
+      - PHP_TZ=UTC
+    depends_on:
+      - postgres
+      - zabbix-server
+    restart: unless-stopped
+    networks:
+      - itops-network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: itops-elasticsearch
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    restart: unless-stopped
+    networks:
+      - itops-network
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.0
+    container_name: itops-logstash
+    ports:
+      - "5044:5044"
+      - "5000:5000/tcp"
+      - "5000:5000/udp"
+    volumes:
+      - ./configs/logstash/pipeline:/usr/share/logstash/pipeline
+      - ./configs/logstash/logstash.yml:/usr/share/logstash/config/logstash.yml
+    environment:
+      - "LS_JAVA_OPTS=-Xmx1g -Xms1g"
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+    networks:
+      - itops-network
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: itops-kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+    networks:
+      - itops-network
+
+  awx-web:
+    image: ansible/awx:latest
+    container_name: itops-awx-web
+    ports:
+      - "8043:8043"
+    environment:
+      - DATABASE_USER=awx
+      - DATABASE_PASSWORD=${AWX_DB_PASSWORD}
+      - DATABASE_NAME=awx
+      - DATABASE_HOST=postgres
+      - SECRET_KEY=${AWX_SECRET_KEY}
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - itops-network
+
+  netbox:
+    image: netboxcommunity/netbox:latest
+    container_name: itops-netbox
+    ports:
+      - "8000:8080"
+    environment:
+      - DB_HOST=postgres
+      - DB_NAME=netbox
+      - DB_USER=netbox
+      - DB_PASSWORD=${NETBOX_DB_PASSWORD}
+      - REDIS_HOST=redis
+      - SECRET_KEY=${NETBOX_SECRET_KEY}
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - netbox_media:/opt/netbox/netbox/media
+    restart: unless-stopped
+    networks:
+      - itops-network
+
+  librenms:
+    image: librenms/librenms:latest
+    container_name: itops-librenms
+    ports:
+      - "8080:8000"
+    environment:
+      - DB_HOST=mariadb
+      - DB_NAME=librenms
+      - DB_USER=librenms
+      - DB_PASSWORD=${LIBRENMS_DB_PASSWORD}
+      - REDIS_HOST=redis
+    depends_on:
+      - mariadb
+      - redis
+    volumes:
+      - librenms_data:/data
+    restart: unless-stopped
+    networks:
+      - itops-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: itops-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_INSTALL_PLUGINS=alexanderzobnin-zabbix-app
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+    networks:
+      - itops-network
+
+  postgres:
+    image: postgres:15
+    container_name: itops-postgres
+    environment:
+      - POSTGRES_USER=itops
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_MULTIPLE_DATABASES=zabbix,awx,netbox
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - itops-network
+
+  mariadb:
+    image: mariadb:latest
+    container_name: itops-mariadb
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=librenms
+      - MYSQL_USER=librenms
+      - MYSQL_PASSWORD=${LIBRENMS_DB_PASSWORD}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    restart: unless-stopped
+    networks:
+      - itops-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: itops-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - itops-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: itops-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+    networks:
+      - itops-network
+
+volumes:
+  elasticsearch_data:
+  postgres_data:
+  mariadb_data:
+  redis_data:
+  grafana_data:
+  netbox_media:
+  librenms_data:
+  prometheus_data:
+
+networks:
+  itops-network:
+    driver: bridge

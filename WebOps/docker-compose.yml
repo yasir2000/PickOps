@@ -1,0 +1,151 @@
+version: '3.8'
+
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: webops-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./configs/nginx:/etc/nginx/conf.d
+      - ./www:/usr/share/nginx/html
+      - ./ssl:/etc/nginx/ssl
+      - nginx_cache:/var/cache/nginx
+    restart: unless-stopped
+    networks:
+      - webops-network
+
+  caddy:
+    image: caddy:latest
+    container_name: webops-caddy
+    ports:
+      - "8080:80"
+      - "8443:443"
+      - "2019:2019"
+    volumes:
+      - ./configs/Caddyfile:/etc/caddy/Caddyfile
+      - ./www:/srv
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    networks:
+      - webops-network
+
+  varnish:
+    image: varnish:stable
+    container_name: webops-varnish
+    ports:
+      - "6081:80"
+      - "6082:6082"
+    environment:
+      - VARNISH_SIZE=${VARNISH_SIZE:-256M}
+    volumes:
+      - ./configs/varnish/default.vcl:/etc/varnish/default.vcl
+    command: ["-p", "default_ttl=3600", "-p", "default_grace=3600"]
+    depends_on:
+      - nginx
+    restart: unless-stopped
+    networks:
+      - webops-network
+
+  haproxy:
+    image: haproxy:latest
+    container_name: webops-haproxy
+    ports:
+      - "8000:80"
+      - "8404:8404"
+    volumes:
+      - ./configs/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg
+    restart: unless-stopped
+    networks:
+      - webops-network
+
+  pagespeed:
+    image: pagespeed/nginx-pagespeed:latest
+    container_name: webops-pagespeed
+    ports:
+      - "8081:80"
+    volumes:
+      - ./configs/nginx/pagespeed.conf:/etc/nginx/conf.d/default.conf
+      - ./www:/usr/share/nginx/html
+      - pagespeed_cache:/var/cache/ngx_pagespeed
+    restart: unless-stopped
+    networks:
+      - webops-network
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: webops-certbot
+    volumes:
+      - ./ssl/letsencrypt:/etc/letsencrypt
+      - ./www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    restart: unless-stopped
+    networks:
+      - webops-network
+
+  lighthouse-ci:
+    image: patrickhulce/lhci-server:latest
+    container_name: webops-lighthouse
+    ports:
+      - "9001:9001"
+    environment:
+      - LHCI_STORAGE_SQL_DIALECT=sqlite
+      - LHCI_STORAGE_SQL_DATABASE_PATH=/data/lhci.db
+    volumes:
+      - lighthouse_data:/data
+    restart: unless-stopped
+    networks:
+      - webops-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: webops-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    networks:
+      - webops-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: webops-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+    networks:
+      - webops-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: webops-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+    networks:
+      - webops-network
+
+volumes:
+  nginx_cache:
+  caddy_data:
+  caddy_config:
+  pagespeed_cache:
+  lighthouse_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  webops-network:
+    driver: bridge

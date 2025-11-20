@@ -1,0 +1,147 @@
+version: '3.8'
+
+services:
+  localstack:
+    image: localstack/localstack:latest
+    container_name: awsops-localstack
+    ports:
+      - "4566:4566"
+      - "4571:4571"
+    environment:
+      - SERVICES=s3,dynamodb,lambda,sqs,sns,kinesis,ecs,ecr,rds,secretsmanager
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+      - LAMBDA_EXECUTOR=docker
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - localstack_data:/tmp/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    networks:
+      - awsops-network
+
+  aws-cli:
+    image: amazon/aws-cli:latest
+    container_name: awsops-cli
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_REGION}
+    volumes:
+      - ./scripts:/scripts
+      - aws_config:/root/.aws
+    command: tail -f /dev/null
+    restart: unless-stopped
+    networks:
+      - awsops-network
+
+  terraform:
+    image: hashicorp/terraform:latest
+    container_name: awsops-terraform
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_REGION}
+    volumes:
+      - ./terraform:/workspace
+    working_dir: /workspace
+    command: tail -f /dev/null
+    restart: unless-stopped
+    networks:
+      - awsops-network
+
+  cloudwatch-exporter:
+    image: prom/cloudwatch-exporter:latest
+    container_name: awsops-cloudwatch-exporter
+    ports:
+      - "9106:9106"
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_REGION}
+    volumes:
+      - ./configs/cloudwatch-exporter.yml:/config/config.yml
+    command: /bin/cloudwatch_exporter /config/config.yml
+    restart: unless-stopped
+    networks:
+      - awsops-network
+
+  steampipe:
+    image: turbot/steampipe:latest
+    container_name: awsops-steampipe
+    ports:
+      - "9193:9193"
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_REGION}
+    volumes:
+      - steampipe_config:/home/steampipe/.steampipe
+    command: service start --foreground
+    restart: unless-stopped
+    networks:
+      - awsops-network
+
+  prowler:
+    image: toniblyx/prowler:latest
+    container_name: awsops-prowler
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_REGION}
+    volumes:
+      - ./reports:/prowler/output
+    command: -M html,json
+    restart: "no"
+    networks:
+      - awsops-network
+
+  aws-nuke:
+    image: rebuy/aws-nuke:latest
+    container_name: awsops-nuke
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_REGION}
+    volumes:
+      - ./configs/nuke-config.yml:/config/nuke-config.yml
+    command: --config /config/nuke-config.yml --no-dry-run
+    restart: "no"
+    networks:
+      - awsops-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: awsops-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+    networks:
+      - awsops-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: awsops-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+    networks:
+      - awsops-network
+
+volumes:
+  localstack_data:
+  aws_config:
+  steampipe_config:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  awsops-network:
+    driver: bridge

@@ -1,0 +1,113 @@
+name: sales-monthly-metrics
+domain: sales
+version: 1.0.0
+
+description: |
+  Monthly aggregated sales metrics by region and product category.
+  This data product provides key sales performance indicators
+  for analysis and reporting across the organization.
+
+owner:
+  team: sales-analytics
+  email: sales-analytics@company.com
+  slack: '#sales-analytics'
+
+schema:
+  type: parquet
+  location: s3://data-products/sales/monthly-metrics/
+  columns:
+    - name: month
+      type: date
+      description: Reporting month (first day of month)
+      nullable: false
+
+    - name: region
+      type: string
+      description: Sales region (NA, EU, APAC)
+      nullable: false
+
+    - name: category
+      type: string
+      description: Product category
+      nullable: false
+
+    - name: revenue
+      type: decimal
+      description: Total revenue in USD
+      nullable: false
+
+    - name: orders
+      type: integer
+      description: Number of orders
+      nullable: false
+
+    - name: customers
+      type: integer
+      description: Unique customers who made purchases
+      nullable: false
+
+quality:
+  # Data freshness SLA
+  freshness_sla: 24h
+
+  # Completeness requirements
+  completeness: 99.0
+
+  # Accuracy validation rules
+  accuracy_checks:
+    - revenue >= 0
+    - orders >= 0
+    - customers >= 0
+    - region IN ('NA', 'EU', 'APAC')
+
+access:
+  # Public accessibility
+  public: false
+
+  # Allowed domains for access
+  allowed_domains:
+    - finance
+    - executive
+
+  # Access request process
+  request_process: |
+    Submit access request via ServiceNow with business justification.
+    Approval required from domain owner and data governance team.
+
+slo:
+  # Availability
+  availability: 99.9%
+
+  # Query performance
+  p95_query_latency: 2s
+
+  # Data quality
+  quality_score: 95%
+
+catalog:
+  # Catalogs where this product is registered
+  - atlas
+  - amundsen
+  - datahub
+
+tags:
+  - sales
+  - metrics
+  - monthly
+  - regional
+
+lineage:
+  upstream:
+    - raw.transactions
+    - raw.returns
+    - dim.regions
+    - dim.products
+
+  downstream:
+    - reports.executive_dashboard
+    - ml.sales_forecast
+
+documentation:
+  readme: README.md
+  examples: examples/
+  changelog: CHANGELOG.md

@@ -1,0 +1,79 @@
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Data directories
+*/data/*
+!*/data/.gitkeep
+
+# Log files
+*/logs/*
+!*/logs/.gitkeep
+*.log
+
+# Backup files
+*.backup
+*.bak
+backups/
+
+# Docker volumes
+volumes/
+
+# Secrets
+secrets/
+*.key
+*.pem
+*.crt
+*.p12
+*.jks
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Node modules
+node_modules/
+npm-debug.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Build artifacts
+dist/
+build/
+*.zip
+*.tar.gz
+
+# Cache
+.cache/
+*.cache
+
+# Monitoring data
+*/prometheus/data/*
+*/grafana/data/*
+
+# Terraform
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+
+# Ansible
+*.retry

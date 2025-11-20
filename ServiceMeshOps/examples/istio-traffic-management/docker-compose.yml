@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  # Service v1 (stable)
+  demo-service-v1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: demo-service-v1
+    environment:
+      - SERVICE_NAME=demo-service
+      - VERSION=v1
+      - PORT=5000
+    ports:
+      - "5001:5000"
+    networks:
+      - servicemesh
+    labels:
+      - "version=v1"
+      - "app=demo-service"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Service v2 (canary)
+  demo-service-v2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: demo-service-v2
+    environment:
+      - SERVICE_NAME=demo-service
+      - VERSION=v2
+      - PORT=5000
+    ports:
+      - "5002:5000"
+    networks:
+      - servicemesh
+    labels:
+      - "version=v2"
+      - "app=demo-service"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Service v3 (experimental)
+  demo-service-v3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: demo-service-v3
+    environment:
+      - SERVICE_NAME=demo-service
+      - VERSION=v3
+      - PORT=5000
+    ports:
+      - "5003:5000"
+    networks:
+      - servicemesh
+    labels:
+      - "version=v3"
+      - "app=demo-service"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Load balancer / Envoy proxy
+  envoy:
+    image: envoyproxy/envoy:v1.28-latest
+    container_name: demo-envoy
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+    ports:
+      - "8000:8000"  # Application traffic
+      - "9901:9901"  # Admin interface
+    networks:
+      - servicemesh
+    command: ["-c", "/etc/envoy/envoy.yaml"]
+
+  # Traffic generator
+  traffic-gen:
+    build:
+      context: .
+      dockerfile: Dockerfile.traffic
+    container_name: demo-traffic-gen
+    environment:
+      - TARGET_URL=http://envoy:8000
+    networks:
+      - servicemesh
+    depends_on:
+      - envoy
+      - demo-service-v1
+      - demo-service-v2
+      - demo-service-v3
+
+networks:
+  servicemesh:
+    external: true
+    name: servicemeshops_servicemesh

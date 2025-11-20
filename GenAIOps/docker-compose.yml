@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  stable-diffusion:
+    image: stabilityai/stable-diffusion-webui:latest
+    container_name: genaiops-sd
+    ports:
+      - "7860:7860"
+    environment:
+      - CLI_ARGS=--allow-code --api --listen
+    volumes:
+      - sd_models:/models
+      - sd_outputs:/outputs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    networks:
+      - genaiops-network
+
+  whisper:
+    image: onerahmet/openai-whisper-asr-webservice:latest
+    container_name: genaiops-whisper
+    ports:
+      - "8001:9000"
+    environment:
+      - ASR_MODEL=base
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    networks:
+      - genaiops-network
+
+  coqui-tts:
+    image: ghcr.io/coqui-ai/tts:latest
+    container_name: genaiops-tts
+    ports:
+      - "5002:5002"
+    command: --model_name tts_models/en/ljspeech/tacotron2-DDC
+    restart: unless-stopped
+    networks:
+      - genaiops-network
+
+  comfyui:
+    image: yanwk/comfyui-boot:latest
+    container_name: genaiops-comfyui
+    ports:
+      - "8188:8188"
+    environment:
+      - CLI_ARGS=--listen 0.0.0.0
+    volumes:
+      - comfyui_models:/opt/ComfyUI/models
+      - comfyui_output:/opt/ComfyUI/output
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    networks:
+      - genaiops-network
+
+  litellm:
+    image: ghcr.io/berriai/litellm:latest
+    container_name: genaiops-litellm
+    ports:
+      - "4000:4000"
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_KEY}
+    volumes:
+      - ./configs/litellm_config.yaml:/app/config.yaml
+    command: --config /app/config.yaml
+    restart: unless-stopped
+    networks:
+      - genaiops-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: genaiops-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - genaiops-network
+
+volumes:
+  sd_models:
+  sd_outputs:
+  comfyui_models:
+  comfyui_output:
+  redis_data:
+
+networks:
+  genaiops-network:
+    driver: bridge

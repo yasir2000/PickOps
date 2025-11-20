@@ -1,0 +1,159 @@
+version: '3.8'
+
+services:
+  wasmtime:
+    image: bytecodealliance/wasmtime:latest
+    container_name: wasmops-wasmtime
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./wasm-modules:/modules
+      - wasmtime_cache:/root/.cache/wasmtime
+    command: serve --addr 0.0.0.0:8080 /modules
+    restart: unless-stopped
+    networks:
+      - wasmops-network
+
+  wasmedge:
+    image: wasmedge/slim-runtime:latest
+    container_name: wasmops-wasmedge
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./wasm-modules:/modules
+    environment:
+      - WASMEDGE_PLUGIN_PATH=/usr/local/lib/wasmedge
+    restart: unless-stopped
+    networks:
+      - wasmops-network
+
+  wasmer:
+    image: wasmer/wasmer:latest
+    container_name: wasmops-wasmer
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./wasm-modules:/modules
+      - wasmer_cache:/root/.wasmer
+    command: run --net --port 8082 /modules/app.wasm
+    restart: unless-stopped
+    networks:
+      - wasmops-network
+
+  spin:
+    image: ghcr.io/fermyon/spin:latest
+    container_name: wasmops-spin
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./spin-apps:/apps
+    working_dir: /apps
+    command: up --listen 0.0.0.0:3000
+    restart: unless-stopped
+    networks:
+      - wasmops-network
+
+  wapm-registry:
+    build:
+      context: ./wapm-registry
+      dockerfile: Dockerfile
+    container_name: wasmops-wapm
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://wapm:${WAPM_DB_PASSWORD}@postgres:5432/wapm
+      - STORAGE_PATH=/data/packages
+    volumes:
+      - wapm_packages:/data/packages
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - wasmops-network
+
+  wasm-builder:
+    image: emscripten/emsdk:latest
+    container_name: wasmops-builder
+    volumes:
+      - ./src:/src
+      - ./build:/build
+    working_dir: /src
+    command: tail -f /dev/null
+    restart: unless-stopped
+    networks:
+      - wasmops-network
+
+  wasm-pack-builder:
+    image: rust:latest
+    container_name: wasmops-wasm-pack
+    volumes:
+      - ./rust-src:/workspace
+      - cargo_cache:/usr/local/cargo/registry
+    working_dir: /workspace
+    command: bash -c "cargo install wasm-pack && tail -f /dev/null"
+    restart: unless-stopped
+    networks:
+      - wasmops-network
+
+  postgres:
+    image: postgres:15
+    container_name: wasmops-postgres
+    environment:
+      - POSTGRES_USER=wapm
+      - POSTGRES_PASSWORD=${WAPM_DB_PASSWORD}
+      - POSTGRES_DB=wapm
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - wasmops-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: wasmops-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - wasmops-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: wasmops-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+    networks:
+      - wasmops-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: wasmops-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+    networks:
+      - wasmops-network
+
+volumes:
+  wasmtime_cache:
+  wasmer_cache:
+  wapm_packages:
+  cargo_cache:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  wasmops-network:
+    driver: bridge

@@ -1,0 +1,309 @@
+version: '3.8'
+
+services:
+  # Apache Atlas - Data governance and metadata management
+  atlas:
+    image: sburn/apache-atlas:latest
+    container_name: datameshops-atlas
+    ports:
+      - "21000:21000"
+    environment:
+      - ATLAS_OPTS=-Xmx2048m
+    volumes:
+      - atlas_data:/opt/atlas/data
+    networks:
+      - datamesh
+    depends_on:
+      - atlas-postgres
+
+  atlas-postgres:
+    image: postgres:15-alpine
+    container_name: datameshops-atlas-db
+    environment:
+      - POSTGRES_DB=atlas
+      - POSTGRES_USER=${ATLAS_DB_USER:-atlas}
+      - POSTGRES_PASSWORD=${ATLAS_DB_PASSWORD:-atlas}
+    volumes:
+      - atlas_postgres:/var/lib/postgresql/data
+    networks:
+      - datamesh
+
+  # Amundsen - Data discovery platform
+  amundsen-frontend:
+    image: amundsendev/amundsen-frontend:4.3.0
+    container_name: datameshops-amundsen-frontend
+    ports:
+      - "5000:5000"
+    environment:
+      - SEARCHSERVICE_BASE=http://amundsen-search:5001
+      - METADATASERVICE_BASE=http://amundsen-metadata:5002
+    networks:
+      - datamesh
+    depends_on:
+      - amundsen-search
+      - amundsen-metadata
+
+  amundsen-search:
+    image: amundsendev/amundsen-search:4.0.0
+    container_name: datameshops-amundsen-search
+    ports:
+      - "5001:5001"
+    environment:
+      - PROXY_ENDPOINT=elasticsearch:9200
+    networks:
+      - datamesh
+    depends_on:
+      - elasticsearch
+
+  amundsen-metadata:
+    image: amundsendev/amundsen-metadata:3.13.0
+    container_name: datameshops-amundsen-metadata
+    ports:
+      - "5002:5002"
+    environment:
+      - PROXY_HOST=neo4j
+      - PROXY_PORT=7687
+      - PROXY_USER=neo4j
+      - PROXY_PASSWORD=${NEO4J_PASSWORD:-neo4j123}
+    networks:
+      - datamesh
+    depends_on:
+      - neo4j
+
+  # Neo4j - Graph database for metadata
+  neo4j:
+    image: neo4j:5.14-community
+    container_name: datameshops-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-neo4j123}
+      - NEO4J_server_memory_heap_max__size=2G
+    volumes:
+      - neo4j_data:/data
+    networks:
+      - datamesh
+
+  # Elasticsearch - Search and indexing
+  elasticsearch:
+    image: elasticsearch:8.11.1
+    container_name: datameshops-elasticsearch
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - datamesh
+
+  # Apache Kafka - Event streaming for data products
+  kafka:
+    image: confluentinc/cp-kafka:7.5.3
+    container_name: datameshops-kafka
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092'
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+      KAFKA_LISTENERS: 'PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093,PLAINTEXT_HOST://0.0.0.0:9092'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - datamesh
+
+  # Schema Registry - Schema management for data contracts
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.5.3
+    container_name: datameshops-schema-registry
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: 'kafka:29092'
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    networks:
+      - datamesh
+    depends_on:
+      - kafka
+
+  # DataHub - Modern data catalog
+  datahub-gms:
+    image: acryldata/datahub-gms:v0.12.0
+    container_name: datameshops-datahub-gms
+    ports:
+      - "8080:8080"
+    environment:
+      - EBEAN_DATASOURCE_USERNAME=${DATAHUB_DB_USER:-datahub}
+      - EBEAN_DATASOURCE_PASSWORD=${DATAHUB_DB_PASSWORD:-datahub}
+      - EBEAN_DATASOURCE_HOST=datahub-mysql:3306
+      - EBEAN_DATASOURCE_URL=jdbc:mysql://datahub-mysql:3306/datahub
+      - EBEAN_DATASOURCE_DRIVER=com.mysql.cj.jdbc.Driver
+      - KAFKA_BOOTSTRAP_SERVER=kafka:29092
+      - ELASTICSEARCH_HOST=elasticsearch
+      - ELASTICSEARCH_PORT=9200
+    networks:
+      - datamesh
+    depends_on:
+      - datahub-mysql
+      - kafka
+      - elasticsearch
+
+  datahub-frontend:
+    image: acryldata/datahub-frontend-react:v0.12.0
+    container_name: datameshops-datahub-frontend
+    ports:
+      - "9002:9002"
+    environment:
+      - DATAHUB_GMS_HOST=datahub-gms
+      - DATAHUB_GMS_PORT=8080
+      - DATAHUB_SECRET=${DATAHUB_SECRET:-YouKnowWhatToDoWithASecret}
+    networks:
+      - datamesh
+    depends_on:
+      - datahub-gms
+
+  datahub-mysql:
+    image: mysql:8.0
+    container_name: datameshops-datahub-mysql
+    environment:
+      - MYSQL_DATABASE=datahub
+      - MYSQL_USER=${DATAHUB_DB_USER:-datahub}
+      - MYSQL_PASSWORD=${DATAHUB_DB_PASSWORD:-datahub}
+      - MYSQL_ROOT_PASSWORD=${DATAHUB_ROOT_PASSWORD:-datahub}
+    volumes:
+      - datahub_mysql:/var/lib/mysql
+    networks:
+      - datamesh
+
+  # Apache Hive Metastore - Metadata for data lakes
+  hive-metastore:
+    image: apache/hive:4.0.0-alpha-2
+    container_name: datameshops-hive-metastore
+    ports:
+      - "9083:9083"
+    environment:
+      - SERVICE_NAME=metastore
+      - DB_DRIVER=postgres
+      - HIVE_METASTORE_JDBC_URL=jdbc:postgresql://hive-postgres:5432/metastore
+      - HIVE_METASTORE_JDBC_DRIVER=org.postgresql.Driver
+      - HIVE_METASTORE_JDBC_USER=${HIVE_DB_USER:-hive}
+      - HIVE_METASTORE_JDBC_PASSWD=${HIVE_DB_PASSWORD:-hive}
+    networks:
+      - datamesh
+    depends_on:
+      - hive-postgres
+
+  hive-postgres:
+    image: postgres:15-alpine
+    container_name: datameshops-hive-db
+    environment:
+      - POSTGRES_DB=metastore
+      - POSTGRES_USER=${HIVE_DB_USER:-hive}
+      - POSTGRES_PASSWORD=${HIVE_DB_PASSWORD:-hive}
+    volumes:
+      - hive_postgres:/var/lib/postgresql/data
+    networks:
+      - datamesh
+
+  # Trino - Distributed SQL query engine
+  trino:
+    image: trinodb/trino:434
+    container_name: datameshops-trino
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./trino/etc:/etc/trino
+    networks:
+      - datamesh
+
+  # MinIO - S3-compatible object storage for data products
+  minio:
+    image: minio/minio:RELEASE-2023-12-09T18-17-51Z
+    container_name: datameshops-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - datamesh
+
+  # PostgreSQL - Sample data product database
+  data-product-db:
+    image: postgres:15-alpine
+    container_name: datameshops-product-db
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=dataproducts
+      - POSTGRES_USER=${PRODUCT_DB_USER:-dataproduct}
+      - POSTGRES_PASSWORD=${PRODUCT_DB_PASSWORD:-dataproduct}
+    volumes:
+      - product_db:/var/lib/postgresql/data
+    networks:
+      - datamesh
+
+  # Prometheus - Metrics and monitoring
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: datameshops-prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - datamesh
+
+  # Grafana - Observability dashboards
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: datameshops-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - datamesh
+
+volumes:
+  atlas_data:
+  atlas_postgres:
+  neo4j_data:
+  elasticsearch_data:
+  kafka_data:
+  datahub_mysql:
+  hive_postgres:
+  minio_data:
+  product_db:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  datamesh:
+    driver: bridge

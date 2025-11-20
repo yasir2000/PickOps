@@ -1,0 +1,208 @@
+version: '3.8'
+
+services:
+  context-mapper:
+    build:
+      context: ./context-mapper
+      dockerfile: Dockerfile
+    container_name: dddops-context-mapper
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./models:/workspace
+      - context_mapper_data:/data
+    environment:
+      - WORKSPACE_PATH=/workspace
+    restart: unless-stopped
+    networks:
+      - dddops-network
+
+  eventstorming:
+    image: eventstorming/eventstorming-app:latest
+    container_name: dddops-eventstorming
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://dddops:${DB_PASSWORD}@postgres:5432/eventstorming
+    depends_on:
+      - postgres
+    volumes:
+      - eventstorming_data:/app/data
+    restart: unless-stopped
+    networks:
+      - dddops-network
+
+  structurizr:
+    image: structurizr/lite:latest
+    container_name: dddops-structurizr
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./structurizr:/usr/local/structurizr
+    restart: unless-stopped
+    networks:
+      - dddops-network
+
+  plantuml:
+    image: plantuml/plantuml-server:latest
+    container_name: dddops-plantuml
+    ports:
+      - "8083:8080"
+    environment:
+      - BASE_URL=plantuml
+    restart: unless-stopped
+    networks:
+      - dddops-network
+
+  domain-story-modeler:
+    build:
+      context: ./domain-story-modeler
+      dockerfile: Dockerfile
+    container_name: dddops-domain-story
+    ports:
+      - "8084:80"
+    volumes:
+      - domain_story_data:/usr/share/nginx/html/data
+    restart: unless-stopped
+    networks:
+      - dddops-network
+
+  archunit:
+    build:
+      context: ./archunit-validator
+      dockerfile: Dockerfile
+    container_name: dddops-archunit
+    volumes:
+      - ./source-code:/code
+      - ./reports:/reports
+    environment:
+      - CODE_PATH=/code
+      - REPORT_PATH=/reports
+    restart: unless-stopped
+    networks:
+      - dddops-network
+
+  c4-builder:
+    image: c4builder/c4builder:latest
+    container_name: dddops-c4builder
+    ports:
+      - "8085:8080"
+    volumes:
+      - ./c4-models:/models
+      - c4_output:/output
+    restart: unless-stopped
+    networks:
+      - dddops-network
+
+  bounded-context-canvas:
+    build:
+      context: ./bounded-context-canvas
+      dockerfile: Dockerfile
+    container_name: dddops-bc-canvas
+    ports:
+      - "8086:3000"
+    environment:
+      - DATABASE_URL=postgresql://dddops:${DB_PASSWORD}@postgres:5432/bccanvas
+    depends_on:
+      - postgres
+    volumes:
+      - bc_canvas_data:/app/data
+    restart: unless-stopped
+    networks:
+      - dddops-network
+
+  ddd-documentation:
+    image: node:18
+    container_name: dddops-docs
+    ports:
+      - "4000:4000"
+    working_dir: /docs
+    volumes:
+      - ./documentation:/docs
+    command: bash -c "npm install -g docsify-cli && docsify serve ."
+    restart: unless-stopped
+    networks:
+      - dddops-network
+
+  postgres:
+    image: postgres:15
+    container_name: dddops-postgres
+    environment:
+      - POSTGRES_USER=dddops
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_MULTIPLE_DATABASES=eventstorming,bccanvas,dddops
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - dddops-network
+
+  mongodb:
+    image: mongo:latest
+    container_name: dddops-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=dddops
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+    networks:
+      - dddops-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: dddops-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - dddops-network
+
+  neo4j:
+    image: neo4j:latest
+    container_name: dddops-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD}
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    restart: unless-stopped
+    networks:
+      - dddops-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: dddops-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+    networks:
+      - dddops-network
+
+volumes:
+  context_mapper_data:
+  eventstorming_data:
+  domain_story_data:
+  c4_output:
+  bc_canvas_data:
+  postgres_data:
+  mongodb_data:
+  redis_data:
+  neo4j_data:
+  neo4j_logs:
+  grafana_data:
+
+networks:
+  dddops-network:
+    driver: bridge

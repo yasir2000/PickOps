@@ -1,0 +1,140 @@
+version: '3.8'
+
+services:
+  thingsboard:
+    image: thingsboard/tb-postgres
+    container_name: iotops-thingsboard
+    ports:
+      - "8080:9090"
+      - "1883:1883"
+      - "5683:5683/udp"
+    environment:
+      - TB_QUEUE_TYPE=in-memory
+    volumes:
+      - thingsboard_data:/data
+      - thingsboard_logs:/var/log/thingsboard
+    restart: unless-stopped
+    networks:
+      - iotops-network
+
+  emqx:
+    image: emqx/emqx:latest
+    container_name: iotops-emqx
+    ports:
+      - "1883:1883"
+      - "8083:8083"
+      - "8084:8084"
+      - "18083:18083"
+    environment:
+      - EMQX_NAME=emqx
+      - EMQX_HOST=node1.emqx.io
+    volumes:
+      - emqx_data:/opt/emqx/data
+      - emqx_log:/opt/emqx/log
+    restart: unless-stopped
+    networks:
+      - iotops-network
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: iotops-influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=${INFLUX_USER}
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUX_PASSWORD}
+      - DOCKER_INFLUXDB_INIT_ORG=${INFLUX_ORG}
+      - DOCKER_INFLUXDB_INIT_BUCKET=${INFLUX_BUCKET}
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUX_TOKEN}
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+      - influxdb_config:/etc/influxdb2
+    restart: unless-stopped
+    networks:
+      - iotops-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: iotops-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+    networks:
+      - iotops-network
+
+  node-red:
+    image: nodered/node-red:latest
+    container_name: iotops-nodered
+    ports:
+      - "1880:1880"
+    environment:
+      - TZ=UTC
+    volumes:
+      - nodered_data:/data
+    restart: unless-stopped
+    networks:
+      - iotops-network
+
+  edgex-core-data:
+    image: edgexfoundry/core-data:latest
+    container_name: iotops-edgex-core-data
+    ports:
+      - "59880:59880"
+    environment:
+      - EDGEX_SECURITY_SECRET_STORE=false
+    restart: unless-stopped
+    networks:
+      - iotops-network
+
+  edgex-core-metadata:
+    image: edgexfoundry/core-metadata:latest
+    container_name: iotops-edgex-metadata
+    ports:
+      - "59881:59881"
+    environment:
+      - EDGEX_SECURITY_SECRET_STORE=false
+    restart: unless-stopped
+    networks:
+      - iotops-network
+
+  edgex-core-command:
+    image: edgexfoundry/core-command:latest
+    container_name: iotops-edgex-command
+    ports:
+      - "59882:59882"
+    environment:
+      - EDGEX_SECURITY_SECRET_STORE=false
+    restart: unless-stopped
+    networks:
+      - iotops-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: iotops-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - iotops-network
+
+volumes:
+  thingsboard_data:
+  thingsboard_logs:
+  emqx_data:
+  emqx_log:
+  influxdb_data:
+  influxdb_config:
+  grafana_data:
+  nodered_data:
+  redis_data:
+
+networks:
+  iotops-network:
+    driver: bridge

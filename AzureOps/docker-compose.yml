@@ -1,0 +1,177 @@
+version: '3.8'
+
+services:
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: azureops-azurite
+    ports:
+      - "10000:10000"  # Blob service
+      - "10001:10001"  # Queue service
+      - "10002:10002"  # Table service
+    volumes:
+      - azurite_data:/data
+    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0 --location /data
+    restart: unless-stopped
+    networks:
+      - azureops-network
+
+  azure-cli:
+    image: mcr.microsoft.com/azure-cli:latest
+    container_name: azureops-cli
+    environment:
+      - AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID}
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID}
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
+    volumes:
+      - ./scripts:/scripts
+      - azure_config:/root/.azure
+    command: tail -f /dev/null
+    restart: unless-stopped
+    networks:
+      - azureops-network
+
+  terraform:
+    image: hashicorp/terraform:latest
+    container_name: azureops-terraform
+    environment:
+      - ARM_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID}
+      - ARM_TENANT_ID=${AZURE_TENANT_ID}
+      - ARM_CLIENT_ID=${AZURE_CLIENT_ID}
+      - ARM_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
+    volumes:
+      - ./terraform:/workspace
+    working_dir: /workspace
+    command: tail -f /dev/null
+    restart: unless-stopped
+    networks:
+      - azureops-network
+
+  bicep:
+    image: mcr.microsoft.com/azure-cli:latest
+    container_name: azureops-bicep
+    environment:
+      - AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID}
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID}
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
+    volumes:
+      - ./bicep:/bicep
+    working_dir: /bicep
+    command: tail -f /dev/null
+    restart: unless-stopped
+    networks:
+      - azureops-network
+
+  azure-devops-agent:
+    image: mcr.microsoft.com/azure-pipelines/vsts-agent:latest
+    container_name: azureops-devops-agent
+    environment:
+      - AZP_URL=${AZURE_DEVOPS_URL}
+      - AZP_TOKEN=${AZURE_DEVOPS_TOKEN}
+      - AZP_AGENT_NAME=docker-agent-${HOSTNAME}
+      - AZP_POOL=${AZURE_DEVOPS_POOL:-Default}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - azure_devops_work:/azp/_work
+    restart: unless-stopped
+    networks:
+      - azureops-network
+
+  azure-functions-core-tools:
+    image: mcr.microsoft.com/azure-functions/dotnet:4
+    container_name: azureops-functions
+    ports:
+      - "7071:7071"
+    environment:
+      - AzureWebJobsStorage=UseDevelopmentStorage=true
+    volumes:
+      - ./functions:/home/site/wwwroot
+    restart: unless-stopped
+    networks:
+      - azureops-network
+
+  cosmos-emulator:
+    image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest
+    container_name: azureops-cosmos
+    ports:
+      - "8081:8081"
+      - "10251:10251"
+      - "10252:10252"
+      - "10253:10253"
+      - "10254:10254"
+    environment:
+      - AZURE_COSMOS_EMULATOR_PARTITION_COUNT=10
+      - AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE=true
+    volumes:
+      - cosmos_data:/data
+    restart: unless-stopped
+    networks:
+      - azureops-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: azureops-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    restart: unless-stopped
+    networks:
+      - azureops-network
+
+  azure-exporter:
+    image: quay.io/webdevops/azure-metrics-exporter:latest
+    container_name: azureops-metrics-exporter
+    ports:
+      - "8080:8080"
+    environment:
+      - AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID}
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID}
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
+    restart: unless-stopped
+    networks:
+      - azureops-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: azureops-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_INSTALL_PLUGINS=grafana-azure-monitor-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./configs/grafana:/etc/grafana/provisioning
+    restart: unless-stopped
+    networks:
+      - azureops-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: azureops-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - azureops-network
+
+volumes:
+  azurite_data:
+  azure_config:
+  azure_devops_work:
+  cosmos_data:
+  prometheus_data:
+  grafana_data:
+  redis_data:
+
+networks:
+  azureops-network:
+    driver: bridge

@@ -1,0 +1,221 @@
+version: '3.8'
+
+services:
+  # Istio Control Plane - Service mesh management
+  istiod:
+    image: istio/pilot:1.20.0
+    container_name: servicemeshops-istiod
+    ports:
+      - "15010:15010"  # XDS and CA services (plaintext)
+      - "15012:15012"  # XDS and CA services (TLS and mTLS)
+      - "15014:15014"  # Control plane monitoring
+      - "15017:15017"  # Webhook container port
+    environment:
+      - PILOT_CERT_PROVIDER=istiod
+      - POD_NAME=istiod
+      - POD_NAMESPACE=istio-system
+      - SERVICE_ACCOUNT=istiod
+    volumes:
+      - ./istio-config:/etc/istio/config
+    networks:
+      - servicemesh
+
+  # Envoy Proxy - Data plane proxy
+  envoy:
+    image: envoyproxy/envoy:v1.28.0
+    container_name: servicemeshops-envoy
+    ports:
+      - "10000:10000"  # Admin interface
+      - "9901:9901"    # Stats/admin
+    command: ["/usr/local/bin/envoy", "-c", "/etc/envoy/envoy.yaml", "--service-cluster", "service1"]
+    volumes:
+      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml
+    networks:
+      - servicemesh
+
+  # Linkerd Control Plane
+  linkerd-controller:
+    image: ghcr.io/linkerd/controller:stable-2.14.6
+    container_name: servicemeshops-linkerd
+    ports:
+      - "9995:9995"  # Admin port
+      - "9996:9996"  # Metrics
+    environment:
+      - LINKERD2_PROXY_LOG=warn,linkerd=info
+    networks:
+      - servicemesh
+
+  # Consul - Service discovery and mesh
+  consul:
+    image: hashicorp/consul:1.17
+    container_name: servicemeshops-consul
+    ports:
+      - "8500:8500"  # HTTP API
+      - "8600:8600/udp"  # DNS
+      - "8300:8300"  # Server RPC
+      - "8301:8301"  # Serf LAN
+      - "8302:8302"  # Serf WAN
+    command: agent -server -ui -bootstrap-expect=1 -client=0.0.0.0
+    environment:
+      - CONSUL_BIND_INTERFACE=eth0
+    volumes:
+      - consul_data:/consul/data
+    networks:
+      - servicemesh
+
+  # Kuma Control Plane
+  kuma-cp:
+    image: kong/kuma-cp:2.5.0
+    container_name: servicemeshops-kuma
+    ports:
+      - "5681:5681"  # HTTP API
+      - "5682:5682"  # HTTPS API
+      - "5683:5683"  # Envoy Admin API
+    environment:
+      - KUMA_MODE=standalone
+      - KUMA_STORE_TYPE=memory
+    volumes:
+      - kuma_data:/var/lib/kuma
+    networks:
+      - servicemesh
+
+  # Jaeger - Distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:1.52
+    container_name: servicemeshops-jaeger
+    ports:
+      - "5775:5775/udp"  # Zipkin compact
+      - "6831:6831/udp"  # Jaeger compact
+      - "6832:6832/udp"  # Jaeger binary
+      - "5778:5778"      # Config server
+      - "16686:16686"    # UI
+      - "14268:14268"    # Collector
+      - "14250:14250"    # gRPC
+      - "9411:9411"      # Zipkin compatible
+    environment:
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - servicemesh
+
+  # Zipkin - Alternative distributed tracing
+  zipkin:
+    image: openzipkin/zipkin:3.0
+    container_name: servicemeshops-zipkin
+    ports:
+      - "9412:9411"
+    environment:
+      - STORAGE_TYPE=mem
+    networks:
+      - servicemesh
+
+  # Prometheus - Metrics collection
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: servicemeshops-prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - servicemesh
+
+  # Grafana - Metrics visualization
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: servicemeshops-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - servicemesh
+    depends_on:
+      - prometheus
+
+  # Kiali - Service mesh observability
+  kiali:
+    image: quay.io/kiali/kiali:v1.77
+    container_name: servicemeshops-kiali
+    ports:
+      - "20001:20001"
+    environment:
+      - KIALI_LOG_LEVEL=info
+    volumes:
+      - ./kiali/config.yaml:/kiali-configuration/config.yaml
+    networks:
+      - servicemesh
+    depends_on:
+      - prometheus
+      - jaeger
+
+  # Service A - Demo microservice
+  service-a:
+    image: mendhak/http-https-echo:31
+    container_name: servicemeshops-service-a
+    ports:
+      - "8081:8080"
+    environment:
+      - HTTP_PORT=8080
+      - LOG_WITHOUT_NEWLINE=true
+    networks:
+      - servicemesh
+
+  # Service B - Demo microservice
+  service-b:
+    image: mendhak/http-https-echo:31
+    container_name: servicemeshops-service-b
+    ports:
+      - "8082:8080"
+    environment:
+      - HTTP_PORT=8080
+      - LOG_WITHOUT_NEWLINE=true
+    networks:
+      - servicemesh
+
+  # Service C - Demo microservice
+  service-c:
+    image: mendhak/http-https-echo:31
+    container_name: servicemeshops-service-c
+    ports:
+      - "8083:8080"
+    environment:
+      - HTTP_PORT=8080
+      - LOG_WITHOUT_NEWLINE=true
+    networks:
+      - servicemesh
+
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector:0.91.0
+    container_name: servicemeshops-otel
+    ports:
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+      - "8888:8888"  # Prometheus metrics
+      - "13133:13133"  # Health check
+    volumes:
+      - ./otel/config.yaml:/etc/otel/config.yaml
+    command: ["--config=/etc/otel/config.yaml"]
+    networks:
+      - servicemesh
+
+volumes:
+  consul_data:
+  kuma_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  servicemesh:
+    driver: bridge

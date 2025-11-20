@@ -1,0 +1,130 @@
+version: '3.8'
+
+services:
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.10.0
+    container_name: mlops-mlflow
+    ports:
+      - "5000:5000"
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=postgresql://mlflow:${DB_PASSWORD}@postgres:5432/mlflow
+      - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
+      - AWS_ACCESS_KEY_ID=${MINIO_ACCESS_KEY}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_SECRET_KEY}
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://mlflow:${DB_PASSWORD}@postgres:5432/mlflow
+      --default-artifact-root s3://mlflow/
+      --host 0.0.0.0
+    depends_on:
+      - postgres
+      - minio
+    restart: unless-stopped
+    networks:
+      - mlops-network
+
+  jupyter:
+    image: jupyter/tensorflow-notebook:latest
+    container_name: mlops-jupyter
+    ports:
+      - "8888:8888"
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    volumes:
+      - jupyter_notebooks:/home/jovyan/work
+    restart: unless-stopped
+    networks:
+      - mlops-network
+
+  tensorflow-serving:
+    image: tensorflow/serving:latest
+    container_name: mlops-tf-serving
+    ports:
+      - "8501:8501"
+      - "8500:8500"
+    environment:
+      - MODEL_NAME=${MODEL_NAME:-default}
+    volumes:
+      - tf_models:/models
+    restart: unless-stopped
+    networks:
+      - mlops-network
+
+  feast:
+    image: feastdev/feature-server:latest
+    container_name: mlops-feast
+    ports:
+      - "6566:6566"
+    volumes:
+      - ./configs/feast:/feast
+    command: serve -h 0.0.0.0
+    restart: unless-stopped
+    networks:
+      - mlops-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: mlops-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    networks:
+      - mlops-network
+
+  postgres:
+    image: postgres:15
+    container_name: mlops-postgres
+    environment:
+      - POSTGRES_USER=mlflow
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=mlflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - mlops-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: mlops-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+    networks:
+      - mlops-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: mlops-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+    networks:
+      - mlops-network
+
+volumes:
+  jupyter_notebooks:
+  tf_models:
+  minio_data:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  mlops-network:
+    driver: bridge

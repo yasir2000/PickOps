@@ -1,0 +1,148 @@
+version: '3.8'
+
+services:
+  localstack:
+    image: localstack/localstack:latest
+    container_name: lambdaops-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=lambda,apigateway,s3,dynamodb,sqs,sns,events,logs
+      - LAMBDA_EXECUTOR=docker-reuse
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - localstack_data:/tmp/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./lambda-functions:/var/task
+    restart: unless-stopped
+    networks:
+      - lambdaops-network
+
+  openfaas-gateway:
+    image: openfaas/gateway:latest
+    container_name: lambdaops-openfaas-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - functions_provider_url=http://faas-swarm:8080/
+      - direct_functions=true
+      - direct_functions_suffix=openfaas-fn.svc.cluster.local
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    networks:
+      - lambdaops-network
+
+  openfaas-provider:
+    image: openfaas/faas-swarm:latest
+    container_name: lambdaops-faas-provider
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - basic_auth=false
+    restart: unless-stopped
+    networks:
+      - lambdaops-network
+
+  nuclio:
+    image: quay.io/nuclio/dashboard:stable-amd64
+    container_name: lambdaops-nuclio
+    ports:
+      - "8070:8070"
+    environment:
+      - NUCLIO_DASHBOARD_EXTERNAL_IP_ADDRESSES=0.0.0.0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - nuclio_functions:/etc/nuclio/functions
+    restart: unless-stopped
+    networks:
+      - lambdaops-network
+
+  fn-server:
+    image: fnproject/fnserver:latest
+    container_name: lambdaops-fn
+    ports:
+      - "8081:8080"
+    environment:
+      - FN_LOG_LEVEL=DEBUG
+    volumes:
+      - fn_data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    networks:
+      - lambdaops-network
+
+  fn-ui:
+    image: fnproject/ui:latest
+    container_name: lambdaops-fn-ui
+    ports:
+      - "4000:4000"
+    environment:
+      - FN_API_URL=http://fn-server:8080
+    depends_on:
+      - fn-server
+    restart: unless-stopped
+    networks:
+      - lambdaops-network
+
+  serverless-offline:
+    build:
+      context: ./serverless
+      dockerfile: Dockerfile
+    container_name: lambdaops-serverless
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./serverless:/app
+    command: serverless offline start --host 0.0.0.0
+    restart: unless-stopped
+    networks:
+      - lambdaops-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: lambdaops-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+    networks:
+      - lambdaops-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: lambdaops-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+    networks:
+      - lambdaops-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: lambdaops-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - lambdaops-network
+
+volumes:
+  localstack_data:
+  nuclio_functions:
+  fn_data:
+  prometheus_data:
+  grafana_data:
+  redis_data:
+
+networks:
+  lambdaops-network:
+    driver: bridge
