@@ -25,7 +25,7 @@ help:
 	@echo '  secops, devsecops, aiops, iotops, blockchain, web3,'
 	@echo '  dataops, finops, awsops, lambdaops, azureops, itops,'
 	@echo '  webops, wasmops, gitops, appops, sagaops, eventops, dddops,'
-	@echo '  almops, servicemeshops, datameshops'
+	@echo '  almops, servicemeshops, datameshops, microservicesops'
 	@echo ''
 	@echo 'Examples:'
 	@echo '  ${YELLOW}make start STACK=llmops${RESET}'

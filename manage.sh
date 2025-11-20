@@ -14,7 +14,7 @@ Stacks:
   secops, devsecops, aiops, iotops, blockchain, web3,
   dataops, finops, awsops, lambdaops, azureops, itops,
   webops, wasmops, gitops, appops, sagaops, eventops, dddops,
-  almops, servicemeshops, datameshops
+  almops, servicemeshops, datameshops, microservicesops
 
 Commands:
   start         Start the stack
@@ -70,6 +70,7 @@ get_stack_dir() {
         almops) echo "ALMOps" ;;
         servicemeshops) echo "ServiceMeshOps" ;;
         datameshops) echo "DataMeshOps" ;;
+        microservicesops) echo "MicroservicesOps" ;;
         *) echo "" ;;
     esac
 }

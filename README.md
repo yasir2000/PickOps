@@ -36,6 +36,7 @@ PickOps is a comprehensive collection of production-ready, Docker-based operatio
 | [ALMOps](./ALMOps) | Application Lifecycle Management - End-to-end ALM tooling | ✅ |
 | [ServiceMeshOps](./ServiceMeshOps) | Service Mesh Operations - Traffic management, observability | ✅ |
 | [DataMeshOps](./DataMeshOps) | Data Mesh Operations - Decentralized data architecture | ✅ |
+| [MicroservicesOps](./MicroservicesOps) | Microservices Operations - API gateway, service discovery, messaging | ✅ |
 
 ## 📋 Prerequisites
 

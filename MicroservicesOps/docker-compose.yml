@@ -1,0 +1,366 @@
+version: '3.8'
+
+services:
+  # API Gateway - Kong
+  kong:
+    image: kong:3.4-alpine
+    container_name: microservicesops-kong
+    environment:
+      - KONG_DATABASE=postgres
+      - KONG_PG_HOST=kong-db
+      - KONG_PG_USER=kong
+      - KONG_PG_PASSWORD=kong
+      - KONG_PG_DATABASE=kong
+      - KONG_PROXY_ACCESS_LOG=/dev/stdout
+      - KONG_ADMIN_ACCESS_LOG=/dev/stdout
+      - KONG_PROXY_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_LISTEN=0.0.0.0:8001
+      - KONG_ADMIN_GUI_URL=http://localhost:8002
+    ports:
+      - "8000:8000"  # Proxy
+      - "8443:8443"  # Proxy SSL
+      - "8001:8001"  # Admin API
+      - "8444:8444"  # Admin API SSL
+      - "8002:8002"  # Manager
+      - "8445:8445"  # Manager SSL
+      - "8003:8003"  # Dev Portal
+      - "8004:8004"  # Dev Portal SSL
+    networks:
+      - microservices
+    depends_on:
+      - kong-db
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kong-db:
+    image: postgres:15-alpine
+    container_name: microservicesops-kong-db
+    environment:
+      - POSTGRES_USER=kong
+      - POSTGRES_PASSWORD=kong
+      - POSTGRES_DB=kong
+    volumes:
+      - kong-db-data:/var/lib/postgresql/data
+    networks:
+      - microservices
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kong"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Service Discovery - Consul
+  consul:
+    image: consul:1.17
+    container_name: microservicesops-consul
+    command: agent -server -ui -bootstrap-expect=1 -client=0.0.0.0
+    ports:
+      - "8500:8500"  # HTTP API & UI
+      - "8600:8600/udp"  # DNS
+    volumes:
+      - consul-data:/consul/data
+      - consul-config:/consul/config
+    networks:
+      - microservices
+    environment:
+      - CONSUL_BIND_INTERFACE=eth0
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Service Registry - Eureka
+  eureka:
+    image: steeltoeoss/eureka-server:latest
+    container_name: microservicesops-eureka
+    ports:
+      - "8761:8761"
+    networks:
+      - microservices
+    environment:
+      - EUREKA_INSTANCE_HOSTNAME=eureka
+      - EUREKA_CLIENT_REGISTER_WITH_EUREKA=false
+      - EUREKA_CLIENT_FETCH_REGISTRY=false
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Distributed Tracing - Jaeger
+  jaeger:
+    image: jaegertracing/all-in-one:1.51
+    container_name: microservicesops-jaeger
+    ports:
+      - "5775:5775/udp"  # Zipkin compact
+      - "6831:6831/udp"  # Jaeger compact
+      - "6832:6832/udp"  # Jaeger binary
+      - "5778:5778"      # Config
+      - "16686:16686"    # UI
+      - "14268:14268"    # Collector
+      - "14250:14250"    # gRPC
+      - "9411:9411"      # Zipkin compatible
+    networks:
+      - microservices
+    environment:
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+      - COLLECTOR_OTLP_ENABLED=true
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:16686"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Message Broker - RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: microservicesops-rabbitmq
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
+      - "15692:15692" # Prometheus metrics
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - microservices
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-admin}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS:-admin}
+      - RABBITMQ_PROMETHEUS_PLUGIN_ENABLED=true
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Event Streaming - Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: microservicesops-zookeeper
+    ports:
+      - "2181:2181"
+    networks:
+      - microservices
+    environment:
+      - ZOOKEEPER_CLIENT_PORT=2181
+      - ZOOKEEPER_TICK_TIME=2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-logs:/var/lib/zookeeper/log
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: microservicesops-kafka
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    networks:
+      - microservices
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    depends_on:
+      - zookeeper
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Configuration Server - Spring Cloud Config
+  config-server:
+    image: hyness/spring-cloud-config-server:3.1.5
+    container_name: microservicesops-config-server
+    ports:
+      - "8888:8888"
+    networks:
+      - microservices
+    environment:
+      - SPRING_CLOUD_CONFIG_SERVER_GIT_URI=${CONFIG_GIT_URI:-https://github.com/spring-cloud-samples/config-repo}
+      - SPRING_CLOUD_CONFIG_SERVER_GIT_DEFAULT_LABEL=main
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Circuit Breaker Dashboard - Hystrix
+  hystrix-dashboard:
+    image: mlabouardy/hystrix-dashboard:latest
+    container_name: microservicesops-hystrix
+    ports:
+      - "9002:9002"
+    networks:
+      - microservices
+
+  # Load Balancer - HAProxy
+  haproxy:
+    image: haproxy:2.9-alpine
+    container_name: microservicesops-haproxy
+    ports:
+      - "9000:9000"  # Stats
+      - "8080:8080"  # Frontend
+    volumes:
+      - ./configs/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      - microservices
+    healthcheck:
+      test: ["CMD", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Service Mesh Control Plane - Istio Pilot (lightweight)
+  istio-pilot:
+    image: istio/pilot:1.19.3
+    container_name: microservicesops-istio-pilot
+    ports:
+      - "15010:15010"  # gRPC
+      - "8090:8080"    # Debug
+    networks:
+      - microservices
+    environment:
+      - PILOT_CERT_PROVIDER=istiod
+      - POD_NAMESPACE=default
+
+  # Metrics Collection - Prometheus
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: microservicesops-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - microservices
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Visualization - Grafana
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: microservicesops-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./configs/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    networks:
+      - microservices
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASS:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Redis - Caching & Session Store
+  redis:
+    image: redis:7-alpine
+    container_name: microservicesops-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - microservices
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Database - PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: microservicesops-postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - microservices
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-microservices}
+      - POSTGRES_PASSWORD=${POSTGRES_PASS:-microservices}
+      - POSTGRES_DB=microservices
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U microservices"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # NATS - Lightweight Messaging
+  nats:
+    image: nats:2.10-alpine
+    container_name: microservicesops-nats
+    ports:
+      - "4222:4222"  # Client
+      - "8222:8222"  # HTTP monitoring
+      - "6222:6222"  # Cluster
+    networks:
+      - microservices
+    command: ["-js", "-m", "8222"]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector:0.91.0
+    container_name: microservicesops-otel
+    ports:
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+      - "13133:13133"  # Health check
+    volumes:
+      - ./configs/otel-collector-config.yml:/etc/otel-collector-config.yml:ro
+    networks:
+      - microservices
+    command: ["--config=/etc/otel-collector-config.yml"]
+
+networks:
+  microservices:
+    driver: bridge
+
+volumes:
+  kong-db-data:
+  consul-data:
+  consul-config:
+  rabbitmq-data:
+  zookeeper-data:
+  zookeeper-logs:
+  kafka-data:
+  prometheus-data:
+  grafana-data:
+  redis-data:
+  postgres-data:
