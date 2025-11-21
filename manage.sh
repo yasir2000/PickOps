@@ -21,7 +21,7 @@ Stacks:
   waterops, enerops, autoops, enterops, technoops, commops,
   servops, petops, wearops, manuops, foodops, farmops,
   poultryops, dairyops, fishops, taxops, bankops, bizops,
-  animops, constops, archiops, qualiops, interops, tradeops,
+  animops, constops, archaops, archiops, qualiops, interops, tradeops,
   workops, pubops, foresops, defops, spaceops, loveops,
   hygenops, machiops, chemiops, sciops, researops, furnops,
   electops, retaiops, wastops, kidsops, elderops, reliops,
@@ -121,6 +121,7 @@ get_stack_dir() {
         bizops) echo "BizOps" ;;
         animops) echo "AnimOps" ;;
         constops) echo "ConstOps" ;;
+        archaops) echo "ArchaOps" ;;
         archiops) echo "ArchiOps" ;;
         qualiops) echo "QualiOps" ;;
         interops) echo "InterOps" ;;

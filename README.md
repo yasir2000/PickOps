@@ -83,9 +83,10 @@ PickOps is the world's most comprehensive collection of production-ready, Docker
 | [TaxOps](./TaxOps) | Taxation - Tax filing, calculation, compliance, audit | ✅ |
 | [BankOps](./BankOps) | Banking - Core banking, loans, fraud detection, mobile | ✅ |
 | [BizOps](./BizOps) | Business Operations - CRM, ERP, invoicing, projects | ✅ |
-| [AnimOps](./AnimOps) | Animals & Plants - Species database, conservation | ✅ |
+| [AnimOps](./AnimOps) | Animals & Plants Operations - Species database, conservation | ✅ |
 | [ConstOps](./ConstOps) | Construction - Project mgmt, bidding, equipment, safety | ✅ |
-| [ArchiOps](./ArchiOps) | Archaeology - Site database, artifacts, 3D scanning | ✅ |
+| [ArchaOps](./ArchaOps) | Archaeology - Site database, artifacts, 3D scanning | ✅ |
+| [ArchiOps](./ArchiOps) | Architecture Operations - BIM, CAD, C4 models, diagrams (ALL architecture types) | ✅ |
 | [QualiOps](./QualiOps) | Quality Operations - ISO management, audits, defects | ✅ |
 | [InterOps](./InterOps) | Internet Operations - DNS, CDN, bandwidth, DDoS protection | ✅ |
 | [TradeOps](./TradeOps) | Trade Operations - Order matching, settlement, risk mgmt | ✅ |

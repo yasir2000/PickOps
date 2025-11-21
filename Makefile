@@ -32,7 +32,7 @@ help:
 	@echo '  waterops, enerops, autoops, enterops, technoops, commops,'
 	@echo '  servops, petops, wearops, manuops, foodops, farmops,'
 	@echo '  poultryops, dairyops, fishops, taxops, bankops, bizops,'
-	@echo '  animops, constops, archiops, qualiops, interops, tradeops,'
+	@echo '  animops, constops, archaops, archiops, qualiops, interops, tradeops,'
 	@echo '  workops, pubops, foresops, defops, spaceops, loveops,'
 	@echo '  hygenops, machiops, chemiops, sciops, researops, furnops,'
 	@echo '  electops, retaiops, wastops, kidsops, elderops, reliops,'
