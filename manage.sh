@@ -14,7 +14,19 @@ Stacks:
   secops, devsecops, aiops, iotops, blockchain, web3,
   dataops, finops, awsops, lambdaops, azureops, itops,
   webops, wasmops, gitops, appops, sagaops, eventops, dddops,
-  almops, servicemeshops, datameshops, microservicesops
+  almops, servicemeshops, datameshops, microservicesops,
+  govops, agriops, poliops, muniops, transops, airops,
+  aviops, mariops, logiops, mediops, healthops, drugops,
+  eduops, landops, realops, homeops, socioops, civilops,
+  waterops, enerops, autoops, enterops, technoops, commops,
+  servops, petops, wearops, manuops, foodops, farmops,
+  poultryops, dairyops, fishops, taxops, bankops, bizops,
+  animops, constops, archiops, qualiops, interops, tradeops,
+  workops, pubops, foresops, defops, spaceops, loveops,
+  hygenops, machiops, chemiops, sciops, researops, furnops,
+  electops, retaiops, wastops, kidsops, elderops, reliops,
+  humanops, sporops, psychops, musicops, moneyops, codeops,
+  womenops, nationops, compops, lawops
 
 Commands:
   start         Start the stack
@@ -71,6 +83,76 @@ get_stack_dir() {
         servicemeshops) echo "ServiceMeshOps" ;;
         datameshops) echo "DataMeshOps" ;;
         microservicesops) echo "MicroservicesOps" ;;
+        govops) echo "GovOps" ;;
+        agriops) echo "AgriOps" ;;
+        poliops) echo "PoliOps" ;;
+        muniops) echo "MuniOps" ;;
+        transops) echo "TransOps" ;;
+        airops) echo "AirOps" ;;
+        aviops) echo "AviOps" ;;
+        mariops) echo "MariOps" ;;
+        logiops) echo "LogiOps" ;;
+        mediops) echo "MediOps" ;;
+        healthops) echo "HealthOps" ;;
+        drugops) echo "DrugOps" ;;
+        eduops) echo "EduOps" ;;
+        landops) echo "LandOps" ;;
+        realops) echo "RealOps" ;;
+        homeops) echo "HomeOps" ;;
+        socioops) echo "SocioOps" ;;
+        civilops) echo "CivilOps" ;;
+        waterops) echo "WaterOps" ;;
+        enerops) echo "EnerOps" ;;
+        autoops) echo "AutoOps" ;;
+        enterops) echo "EnterOps" ;;
+        technoops) echo "TechnoOps" ;;
+        commops) echo "CommOps" ;;
+        servops) echo "ServOps" ;;
+        petops) echo "PetOps" ;;
+        wearops) echo "WearOps" ;;
+        manuops) echo "ManuOps" ;;
+        foodops) echo "FoodOps" ;;
+        farmops) echo "FarmOps" ;;
+        poultryops) echo "PoultryOps" ;;
+        dairyops) echo "DairyOps" ;;
+        fishops) echo "FishOps" ;;
+        taxops) echo "TaxOps" ;;
+        bankops) echo "BankOps" ;;
+        bizops) echo "BizOps" ;;
+        animops) echo "AnimOps" ;;
+        constops) echo "ConstOps" ;;
+        archiops) echo "ArchiOps" ;;
+        qualiops) echo "QualiOps" ;;
+        interops) echo "InterOps" ;;
+        tradeops) echo "TradeOps" ;;
+        workops) echo "WorkOps" ;;
+        pubops) echo "PubOps" ;;
+        foresops) echo "ForesOps" ;;
+        defops) echo "DefOps" ;;
+        spaceops) echo "SpaceOps" ;;
+        loveops) echo "LoveOps" ;;
+        hygenops) echo "HygenOps" ;;
+        machiops) echo "MachiOps" ;;
+        chemiops) echo "ChemiOps" ;;
+        sciops) echo "SciOps" ;;
+        researops) echo "ResearOps" ;;
+        furnops) echo "FurnOps" ;;
+        electops) echo "ElectOps" ;;
+        retaiops) echo "RetaiOps" ;;
+        wastops) echo "WastOps" ;;
+        kidsops) echo "KidsOps" ;;
+        elderops) echo "ElderOps" ;;
+        reliops) echo "ReliOps" ;;
+        humanops) echo "HumanOps" ;;
+        sporops) echo "SporOps" ;;
+        psychops) echo "PsychOps" ;;
+        musicops) echo "MusicOps" ;;
+        moneyops) echo "MoneyOps" ;;
+        codeops) echo "CodeOps" ;;
+        womenops) echo "WomenOps" ;;
+        nationops) echo "NationOps" ;;
+        compops) echo "CompOps" ;;
+        lawops) echo "LawOps" ;;
         *) echo "" ;;
     esac
 }
