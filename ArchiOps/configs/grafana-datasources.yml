@@ -7,7 +7,7 @@ datasources:
     url: http://prometheus:9090
     isDefault: true
     editable: true
-  
+
   - name: PostgreSQL
     type: postgres
     url: postgres:5432
@@ -20,7 +20,7 @@ datasources:
       maxOpenConns: 10
       maxIdleConns: 2
       connMaxLifetime: 14400
-  
+
   - name: Elasticsearch
     type: elasticsearch
     access: proxy
