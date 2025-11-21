@@ -1,4 +1,4 @@
-# ArchiOps - Archaeology Operations
+# ArchaOps - Archaeology Operations
 
 Comprehensive operational stack for Archaeology Operations.
 

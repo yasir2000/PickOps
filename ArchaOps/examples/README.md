@@ -1,4 +1,4 @@
-# ArchiOps Examples
+# ArchaOps Examples
 
 Production-ready examples for Archaeology Operations.
 
