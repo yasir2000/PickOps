@@ -81,11 +81,11 @@ create_stack() {
     local stack_name=$1
     local description=$2
     local services=$3
-    
+
     echo "Creating $stack_name..."
-    
+
     mkdir -p "$stack_name"
-    
+
     # Create docker-compose.yml
     cat > "$stack_name/docker-compose.yml" << 'EOF'
 version: '3.8'
@@ -306,19 +306,19 @@ EOF
 
     # Create configs directory
     mkdir -p "$stack_name/configs"
-    
+
     # Create nginx.conf
     cat > "$stack_name/configs/nginx.conf" << 'EOF'
 server {
     listen 80;
     server_name localhost;
-    
+
     location / {
         root /usr/share/nginx/html;
         index index.html;
         try_files $uri $uri/ /index.html;
     }
-    
+
     location /api {
         proxy_pass http://backend:3000;
         proxy_set_header Host $host;
@@ -336,7 +336,7 @@ scrape_configs:
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
-  
+
   - job_name: 'backend'
     static_configs:
       - targets: ['backend:3000']
@@ -373,12 +373,12 @@ EOF
 main() {
     echo "🚀 Creating 68 specialized operational stacks for PickOps"
     echo "=================================================="
-    
+
     for stack_def in "${STACKS[@]}"; do
         IFS='|' read -r name desc services <<< "$stack_def"
         create_stack "$name" "$desc" "$services"
     done
-    
+
     echo ""
     echo "✅ All stacks created successfully!"
     echo "Total stacks: ${#STACKS[@]}"
