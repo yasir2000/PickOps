@@ -103,10 +103,201 @@ services:
       - agentops-network
 
 volumes:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: agentops-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=5m
+      - OLLAMA_NUM_PARALLEL=4
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    networks:
+      - agentops-network
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── Agentic Framework Runners ────────────────────────────────────────────
+
+  crewai-runner:
+    build:
+      context: ./agents/crewai
+      dockerfile: Dockerfile
+    container_name: agentops-crewai
+    environment:
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3}
+      - USE_LOCAL_LLM=${USE_LOCAL_LLM:-true}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/agentops
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+    depends_on:
+      ollama:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./agents:/app/agents
+    restart: unless-stopped
+    networks:
+      - agentops-network
+
+  langgraph-server:
+    build:
+      context: ./agents/langgraph
+      dockerfile: Dockerfile
+    container_name: agentops-langgraph
+    ports:
+      - "8001:8001"
+    environment:
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3}
+      - USE_LOCAL_LLM=${USE_LOCAL_LLM:-true}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/agentops
+      - OPS_ENVIRONMENT=${OPS_ENVIRONMENT:-production}
+    depends_on:
+      - ollama
+      - redis
+      - postgres
+    volumes:
+      - ./agents:/app/agents
+    restart: unless-stopped
+    networks:
+      - agentops-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  autogen-runner:
+    build:
+      context: ./agents/autogen
+      dockerfile: Dockerfile
+    container_name: agentops-autogen
+    environment:
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3}
+      - USE_LOCAL_LLM=${USE_LOCAL_LLM:-true}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - ollama
+      - redis
+    volumes:
+      - ./agents:/app/agents
+      - autogen_workspace:/tmp/autogen_ops_workspace
+    restart: unless-stopped
+    networks:
+      - agentops-network
+
+  agentscope-server:
+    build:
+      context: ./agents/agentscope
+      dockerfile: Dockerfile
+    container_name: agentops-agentscope
+    ports:
+      - "12001:12001"
+    environment:
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3}
+      - USE_LOCAL_LLM=${USE_LOCAL_LLM:-true}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/agentops
+    depends_on:
+      - ollama
+      - redis
+    volumes:
+      - ./agents:/app/agents
+    restart: unless-stopped
+    networks:
+      - agentops-network
+
+  # ─── Vector Store (RAG) ───────────────────────────────────────────────────
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: agentops-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    restart: unless-stopped
+    networks:
+      - agentops-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── Secrets Management ───────────────────────────────────────────────────
+
+  vault:
+    image: hashicorp/vault:latest
+    container_name: agentops-vault
+    ports:
+      - "8200:8200"
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=${VAULT_ROOT_TOKEN:-agentops-vault-token}
+      - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - vault_data:/vault/data
+    command: vault server -dev
+    restart: unless-stopped
+    networks:
+      - agentops-network
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ─── Agent Tracing & Eval ─────────────────────────────────────────────────
+
+  langfuse:
+    image: langfuse/langfuse:latest
+    container_name: agentops-langfuse
+    ports:
+      - "3001:3000"
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/langfuse
+      - NEXTAUTH_SECRET=${LANGFUSE_SECRET:-changeme-in-production}
+      - NEXTAUTH_URL=http://localhost:3001
+      - SALT=${LANGFUSE_SALT:-changeme-salt}
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - agentops-network
+
+volumes:
   redis_data:
   postgres_data:
   prometheus_data:
   grafana_data:
+  ollama_data:
+  qdrant_data:
+  vault_data:
+  autogen_workspace:
 
 networks:
   agentops-network:
